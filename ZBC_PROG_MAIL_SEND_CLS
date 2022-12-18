@@ -1,0 +1,269 @@
+*&---------------------------------------------------------------------*
+*& Include          ZBC_PROG_MAIL_SEND_CLS
+*&---------------------------------------------------------------------*
+CLASS LCL_MAIN DEFINITION.
+
+  PUBLIC SECTION.
+    CLASS-METHODS:
+      GET_DATA,
+      FUNCTIONS
+            FOR EVENT IF_SALV_EVENTS_FUNCTIONS~ADDED_FUNCTION
+                   OF CL_SALV_EVENTS_TABLE,
+      SEND_MAIL
+            IMPORTING I_TABLE TYPE STANDARD TABLE,
+      ITAB_TO_CONVERT_EXCEL
+            IMPORTING I_DATA            TYPE ANY TABLE
+            RETURNING VALUE(RV_XSTRING) TYPE XSTRING.
+
+ENDCLASS.
+
+CLASS LCL_MAIN IMPLEMENTATION.
+
+  METHOD GET_DATA.
+
+    SELECT MARA~MATNR,
+           MARA~ERSDA,
+           MARD~WERKS,
+           MARD~LGORT,
+           MARD~LABST
+        FROM MARA
+            INNER JOIN MARD
+                    ON MARD~MATNR EQ MARA~MATNR
+             UP TO @P_COUNT ROWS
+        INTO TABLE @RECS
+          WHERE MARD~LABST GT 0.
+
+    TRY.
+        CL_SALV_TABLE=>FACTORY(
+          IMPORTING
+            R_SALV_TABLE   = DATA(GO_SALV)
+          CHANGING
+            T_TABLE        = RECS[]
+               ).
+
+        "Gui Status(GUI STATUS copied from SAPLSALV program)
+        GO_SALV->SET_SCREEN_STATUS(
+          EXPORTING
+            REPORT        = SY-REPID
+            PFSTATUS      = |STANDARD|
+            SET_FUNCTIONS = CL_SALV_TABLE=>C_FUNCTIONS_ALL
+        ).
+
+        "Events
+        DATA(EVENTS) = GO_SALV->GET_EVENT( ).
+        SET HANDLER LCL_MAIN=>FUNCTIONS FOR EVENTS.
+
+        "Selection Mode
+        DATA(SELECTIONS) = GO_SALV->GET_SELECTIONS( ).
+        SELECTIONS->SET_SELECTION_MODE( IF_SALV_C_SELECTION_MODE=>ROW_COLUMN ).
+
+        "Zebra
+        DATA(DISPLAY)    = GO_SALV->GET_DISPLAY_SETTINGS( ).
+        DISPLAY->SET_STRIPED_PATTERN( CL_SALV_DISPLAY_SETTINGS=>TRUE ).
+
+        "Optimize
+        DATA(COLUMNS)    = GO_SALV->GET_COLUMNS( ).
+        COLUMNS->SET_OPTIMIZE( 'X' ).
+
+        GO_SALV->DISPLAY( ).
+      CATCH CX_ROOT INTO DATA(LO_ROOT).
+
+    ENDTRY.
+
+  ENDMETHOD.
+
+  METHOD FUNCTIONS.
+    CASE SY-UCOMM.
+      WHEN '&SEND_MAIL'.
+        LCL_MAIN=>SEND_MAIL( I_TABLE = RECS[] ).
+    ENDCASE.
+  ENDMETHOD.
+
+  METHOD SEND_MAIL.
+
+    DATA: IT_CONTENTS TYPE STANDARD TABLE OF SOLISTI1,
+          WA_CONTENTS TYPE SOLISTI1.
+
+    DATA: LV_SIZE    TYPE I.
+    DATA: LV_SUBJECT TYPE STRING.
+    DATA: LT_BINTAB  TYPE SOLIX_TAB.
+    DATA: LV_FNAME   TYPE C LENGTH 20.
+
+*"-->  Mail Subject
+    LV_SUBJECT = |This is a test email|.
+
+*"-->  Mail Body
+    WA_CONTENTS-LINE = |<HTML> <BODY>|.
+    APPEND WA_CONTENTS TO IT_CONTENTS.
+    CLEAR : WA_CONTENTS.
+
+
+    "*--> Mail Content
+    WA_CONTENTS-LINE = | { '<p style="font-family:Calibri;font-size:15;">' } { 'Hello,' } |.
+    APPEND WA_CONTENTS TO IT_CONTENTS.
+    CLEAR : WA_CONTENTS.
+
+    WA_CONTENTS-LINE = |<br>|.
+    APPEND WA_CONTENTS TO IT_CONTENTS.
+    CLEAR : WA_CONTENTS.
+
+    WA_CONTENTS-LINE = |<br>|.
+    APPEND WA_CONTENTS TO IT_CONTENTS.
+    CLEAR : WA_CONTENTS.
+
+    WA_CONTENTS-LINE = |This is a test email, please ignore it|.
+    APPEND WA_CONTENTS TO IT_CONTENTS.
+    CLEAR : WA_CONTENTS.
+
+    WA_CONTENTS-LINE = |<br>|.  "Alt Satıra Geçiriyor
+    APPEND WA_CONTENTS TO IT_CONTENTS.
+    CLEAR : WA_CONTENTS.
+
+    WA_CONTENTS-LINE = |The content of the e-mail is in the attachment|.
+    APPEND WA_CONTENTS TO IT_CONTENTS.
+    CLEAR : WA_CONTENTS.
+
+    WA_CONTENTS-LINE = |<br>|.  "Alt Satıra Geçiriyor
+    APPEND WA_CONTENTS TO IT_CONTENTS.
+    CLEAR : WA_CONTENTS.
+
+    WA_CONTENTS-LINE = |<br>|.  "Alt Satıra Geçiriyor
+    APPEND WA_CONTENTS TO IT_CONTENTS.
+    CLEAR : WA_CONTENTS.
+    WA_CONTENTS-LINE = |<br>|.  "Alt Satıra Geçiriyor
+    APPEND WA_CONTENTS TO IT_CONTENTS.
+    CLEAR : WA_CONTENTS.
+
+    WA_CONTENTS-LINE = |</tbody>|.
+    APPEND WA_CONTENTS TO IT_CONTENTS.
+    CLEAR : WA_CONTENTS.
+
+    WA_CONTENTS-LINE = |Thanks,|.
+    APPEND WA_CONTENTS TO IT_CONTENTS.
+    CLEAR : WA_CONTENTS.
+
+    WA_CONTENTS-LINE = |<br>|.  "Alt Satıra Geçiriyor
+    APPEND WA_CONTENTS TO IT_CONTENTS.
+    CLEAR : WA_CONTENTS.
+
+    WA_CONTENTS-LINE = |Have a good day.|.
+    APPEND WA_CONTENTS TO IT_CONTENTS.
+    CLEAR : WA_CONTENTS.
+
+    TRY.
+
+        DATA(GO_SEND_REQUEST) = CL_BCS=>CREATE_PERSISTENT( ).
+
+        DATA(GO_DOCUMENT) = CL_DOCUMENT_BCS=>CREATE_DOCUMENT( I_TYPE    = 'HTM'
+                                                              I_TEXT    = IT_CONTENTS
+                                                              I_SUBJECT = CONV SO_OBJ_DES( LV_SUBJECT ) ).
+
+        CALL METHOD GO_SEND_REQUEST->SET_DOCUMENT( GO_DOCUMENT ).
+
+        TRY.
+            DATA(LV_XSTRING) = LCL_MAIN=>ITAB_TO_CONVERT_EXCEL( I_DATA = RECS[] ).
+
+            CALL FUNCTION 'SCMS_XSTRING_TO_BINARY'
+              EXPORTING
+                BUFFER        = LV_XSTRING
+              IMPORTING
+                OUTPUT_LENGTH = LV_SIZE
+              TABLES
+                BINARY_TAB    = LT_BINTAB.
+          CATCH CX_BCS.
+        ENDTRY.
+
+        DATA LT_ATT_HEAD TYPE SOLI_TAB.
+        APPEND '<(>&< )>SO_FILENAME=Test_Attachment.xlsx' TO LT_ATT_HEAD.
+
+        GO_DOCUMENT->ADD_ATTACHMENT(
+                     EXPORTING
+                       I_ATTACHMENT_TYPE     = 'XLS'
+                       I_ATTACHMENT_SUBJECT  = 'Test_Attachment'
+                       I_ATTACHMENT_SIZE     = CONV SO_OBJ_LEN( LV_SIZE )
+                       I_ATTACHMENT_LANGUAGE = 'T'
+                       I_ATTACHMENT_HEADER   = LT_ATT_HEAD
+                       I_ATT_CONTENT_HEX     = LT_BINTAB
+        ).
+
+        DATA(SENDER1) = CL_CAM_ADDRESS_BCS=>CREATE_INTERNET_ADDRESS( 'test@outlook.com' ).
+        CALL METHOD GO_SEND_REQUEST->SET_SENDER
+          EXPORTING
+            I_SENDER = SENDER1.
+
+        DATA(LO_RECIPIENT) = CL_CAM_ADDRESS_BCS=>CREATE_INTERNET_ADDRESS( 'berke.cavus@outlook.com' ).
+
+        CALL METHOD GO_SEND_REQUEST->ADD_RECIPIENT
+          EXPORTING
+            I_RECIPIENT = LO_RECIPIENT
+            I_EXPRESS   = 'X'.
+
+        CALL METHOD GO_SEND_REQUEST->SEND(
+          EXPORTING
+            I_WITH_ERROR_SCREEN = 'X'
+          RECEIVING
+            RESULT              = DATA(LV_SENT_TO_ALL) ).
+
+        IF LV_SENT_TO_ALL = 'X'.
+          MESSAGE 'Email sent successfully' TYPE 'S'.
+        ELSEIF LV_SENT_TO_ALL IS INITIAL.
+          MESSAGE 'Email sending failed !' TYPE 'E'.
+        ENDIF.
+
+        COMMIT WORK.
+    ENDTRY.
+
+  ENDMETHOD.
+
+  METHOD ITAB_TO_CONVERT_EXCEL.
+
+    DATA: REF_DATA TYPE REF TO DATA.
+    FIELD-SYMBOLS: <DREF> TYPE ANY.
+    CREATE DATA REF_DATA LIKE I_DATA.
+    ASSIGN REF_DATA->* TO <DREF>.
+    <DREF> = I_DATA.
+
+    DATA: LR_XLDIMENSION TYPE REF TO IF_IXML_NODE,
+          LR_XLWORKSHEET TYPE REF TO IF_IXML_ELEMENT.
+
+    CLEAR RV_XSTRING.
+
+    TRY.
+        CL_SALV_TABLE=>FACTORY( IMPORTING R_SALV_TABLE = DATA(LR_TABLE)
+                                CHANGING T_TABLE = <DREF> ).
+
+        DATA(LV_XLSX) = LR_TABLE->TO_XML( IF_SALV_BS_XML=>C_TYPE_XLSX ).
+        DATA(LR_ZIP) = NEW CL_ABAP_ZIP( ).
+        LR_ZIP->LOAD( LV_XLSX ).
+        LR_ZIP->GET( EXPORTING NAME = 'xl/worksheets/sheet1.xml' IMPORTING CONTENT = DATA(LV_FILE) ).
+
+        DATA(LR_FILE) = NEW CL_XML_DOCUMENT( ).
+        LR_FILE->PARSE_XSTRING( LV_FILE ).
+
+        "Row elements are under SheetData
+        DATA(LR_XLNODE) = LR_FILE->FIND_NODE( 'sheetData' ).
+        DATA(LR_XLROWS) = LR_XLNODE->GET_CHILDREN( ).
+
+        "Create new element in the XML file
+        LR_XLWORKSHEET ?= LR_FILE->FIND_NODE( 'worksheet' ).
+        DATA(LR_XLSHEETPR)   = CL_IXML=>CREATE( )->CREATE_DOCUMENT( )->CREATE_ELEMENT( NAME = 'sheetPr' ).
+        DATA(LR_XLOUTLINEPR) = CL_IXML=>CREATE( )->CREATE_DOCUMENT( )->CREATE_ELEMENT( NAME = 'outlinePr' ).
+        LR_XLSHEETPR->IF_IXML_NODE~APPEND_CHILD( LR_XLOUTLINEPR ).
+        LR_XLOUTLINEPR->SET_ATTRIBUTE( NAME = 'summaryBelow' VALUE = 'false' ).
+        LR_XLDIMENSION ?= LR_FILE->FIND_NODE( 'dimension' ).
+        LR_XLWORKSHEET->IF_IXML_NODE~INSERT_CHILD( NEW_CHILD = LR_XLSHEETPR REF_CHILD = LR_XLDIMENSION ).
+
+        " Create xstring and move it to XLSX
+        LR_FILE->RENDER_2_XSTRING( IMPORTING STREAM = LV_FILE ).
+        LR_ZIP->DELETE( EXPORTING NAME = 'xl/worksheets/sheet1.xml' ).
+        LR_ZIP->ADD( EXPORTING NAME = 'xl/worksheets/sheet1.xml' CONTENT = LV_FILE ).
+        RV_XSTRING = LR_ZIP->SAVE( ).
+
+      CATCH CX_ROOT INTO DATA(LO_ROOT).
+        DATA(LV_MSG) = LO_ROOT->GET_TEXT( ).
+        MESSAGE LV_MSG TYPE 'E'.
+    ENDTRY.
+
+  ENDMETHOD.
+
+ENDCLASS.
