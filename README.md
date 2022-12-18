@@ -1,2 +1,3 @@
-# send_mail_with_attachment
-Sending mail with Excel attachment
+Hello everyone,
+
+This program can help you how to send mail and how to add attachment to mail.
