@@ -1,0 +1,13 @@
+*&---------------------------------------------------------------------*
+*& Report ZBC_PROG_MAIL_SEND
+*&---------------------------------------------------------------------*
+REPORT ZBC_PROG_MAIL_SEND.
+
+INCLUDE: ZBC_PROG_MAIL_SEND_TOP,
+         ZBC_PROG_MAIL_SEND_CLS.
+
+START-OF-SELECTION.
+
+  LCL_MAIN=>GET_DATA( ).
+
+END-OF-SELECTION.
