@@ -1,0 +1,18 @@
+*&---------------------------------------------------------------------*
+*& Include          ZBC_PROG_MAIL_SEND_TOP
+*&---------------------------------------------------------------------*
+
+TYPES: BEGIN OF TY_RECS,
+         MATNR TYPE MARA-MATNR,
+         ERSDA TYPE MARA-ERSDA,
+         WERKS TYPE MARD-WERKS,
+         LGORT TYPE MARD-LGORT,
+         LABST TYPE MARD-LABST,
+       END OF TY_RECS.
+DATA: RECS TYPE STANDARD TABLE OF TY_RECS.
+
+SELECTION-SCREEN BEGIN OF BLOCK B1 WITH FRAME TITLE TEXT-100.
+
+  PARAMETERS : P_COUNT TYPE I.
+
+SELECTION-SCREEN END OF BLOCK B1.
